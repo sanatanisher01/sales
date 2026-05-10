@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { collection, query, where, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import api from '../api/axios';
 
 let unsubscribeListener = null;
+let unsubscribeAuth = null;
 
 export const useSalesmanNotificationStore = create((set, get) => ({
   notifications: [],
@@ -13,37 +15,45 @@ export const useSalesmanNotificationStore = create((set, get) => ({
   // Start real-time Firestore listener for salesman notifications
   startListener: (salesmanId) => {
     if (unsubscribeListener) { unsubscribeListener(); unsubscribeListener = null; }
+    if (unsubscribeAuth) { unsubscribeAuth(); unsubscribeAuth = null; }
 
     set({ loading: true });
 
-    const q = query(
-      collection(db, 'notifications'),
-      where('recipientId', '==', salesmanId)
-    );
+    // Wait for Firebase auth before attaching listener (critical on mobile)
+    unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (unsubscribeListener) { unsubscribeListener(); unsubscribeListener = null; }
+      if (!firebaseUser) { set({ loading: false }); return; }
 
-    unsubscribeListener = onSnapshot(q, (snapshot) => {
-      const notifications = snapshot.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const ta = a.createdAt?.seconds ?? 0;
-          const tb = b.createdAt?.seconds ?? 0;
-          return tb - ta;
-        })
-        .slice(0, 50);
+      const q = query(
+        collection(db, 'notifications'),
+        where('recipientId', '==', salesmanId)
+      );
 
-      set({
-        notifications,
-        unreadCount: notifications.filter((n) => !n.read).length,
-        loading: false,
+      unsubscribeListener = onSnapshot(q, (snapshot) => {
+        const notifications = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const ta = a.createdAt?.seconds ?? 0;
+            const tb = b.createdAt?.seconds ?? 0;
+            return tb - ta;
+          })
+          .slice(0, 50);
+
+        set({
+          notifications,
+          unreadCount: notifications.filter((n) => !n.read).length,
+          loading: false,
+        });
+      }, (err) => {
+        console.error('Salesman notification listener error:', err);
+        set({ loading: false });
       });
-    }, (err) => {
-      console.error('Salesman notification listener error:', err);
-      set({ loading: false });
     });
   },
 
   stopListener: () => {
     if (unsubscribeListener) { unsubscribeListener(); unsubscribeListener = null; }
+    if (unsubscribeAuth) { unsubscribeAuth(); unsubscribeAuth = null; }
     set({ notifications: [], unreadCount: 0 });
   },
 

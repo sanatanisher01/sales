@@ -3,7 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, auth } from '../../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../api/axios';
 import { format } from 'date-fns';
@@ -91,64 +92,89 @@ export default function OwnerMap() {
     }
   }, []);
 
-  // Primary: Firestore real-time listener
+  // Primary: Firestore real-time listener — waits for Firebase auth to be ready
   // Uses single where('ownerId') then filters dutyStatus in memory — avoids composite index
   useEffect(() => {
     if (!user?.uid) return;
 
-    const q = query(
-      collection(db, 'users'),
-      where('ownerId', '==', user.uid)
-    );
+    let unsub = () => {};
+    let unsubPoll = null;
 
-    const unsub = onSnapshot(q,
-      (snap) => {
-        setFirestoreError(false);
-        // Filter on-duty salesmen in memory — no composite index needed
-        const list = snap.docs
-          .map((d) => ({ uid: d.id, ...d.data() }))
-          .filter((u) => u.role === 'salesman' && u.dutyStatus === 'On Duty');
-        setSalesmen(list);
-        setLastUpdated(new Date());
-        setLoading(false);
-        // Clear fallback poll if Firestore works
-        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-      },
-      (err) => {
-        console.error('Firestore listener error:', err.code, err.message);
+    // Wait for Firebase Auth state before attaching listener (critical on mobile)
+    const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
+        // Firebase not signed in yet — fall back to REST polling immediately
         setFirestoreError(true);
         setLoading(false);
-        // Fall back to REST API polling every 5s
         fetchViaApi();
-        pollRef.current = setInterval(fetchViaApi, 5000);
+        if (!pollRef.current) {
+          pollRef.current = setInterval(fetchViaApi, 5000);
+        }
+        return;
       }
-    );
+
+      // Firebase auth ready — attach Firestore listener
+      if (unsubPoll) { clearInterval(unsubPoll); unsubPoll = null; }
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+
+      const q = query(
+        collection(db, 'users'),
+        where('ownerId', '==', user.uid)
+      );
+
+      unsub = onSnapshot(q,
+        (snap) => {
+          setFirestoreError(false);
+          const list = snap.docs
+            .map((d) => ({ uid: d.id, ...d.data() }))
+            .filter((u) => u.role === 'salesman' && u.dutyStatus === 'On Duty');
+          setSalesmen(list);
+          setLastUpdated(new Date());
+          setLoading(false);
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        },
+        (err) => {
+          console.error('Firestore listener error:', err.code, err.message);
+          setFirestoreError(true);
+          setLoading(false);
+          fetchViaApi();
+          if (!pollRef.current) {
+            pollRef.current = setInterval(fetchViaApi, 5000);
+          }
+        }
+      );
+    });
 
     return () => {
+      unsubAuth();
       unsub();
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
   }, [user?.uid, fetchViaApi]);
 
-  // Stop events listener — single where, no composite index
+  // Stop events listener — waits for Firebase auth, single where, no composite index
   useEffect(() => {
     if (!user?.uid) return;
 
-    const q = query(
-      collection(db, 'stopEvents'),
-      where('ownerId', '==', user.uid)
-    );
+    let unsub = () => {};
 
-    const unsub = onSnapshot(q, (snap) => {
-      const events = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((e) => !e.resolved);
-      setStopEvents(events);
-    }, () => {
-      // silent fallback — stop events already fetched in fetchViaApi
+    const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) return;
+
+      const q = query(
+        collection(db, 'stopEvents'),
+        where('ownerId', '==', user.uid)
+      );
+
+      unsub = onSnapshot(q, (snap) => {
+        const events = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((e) => !e.resolved);
+        setStopEvents(events);
+      }, () => { /* silent — stop events fetched in fetchViaApi fallback */ });
     });
 
-    return () => unsub();
+    return () => { unsubAuth(); unsub(); };
   }, [user?.uid]);
 
   const activeLocations = salesmen.filter((s) => s.liveLocation?.lat && s.liveLocation?.lng);
