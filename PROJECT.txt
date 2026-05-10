@@ -1,0 +1,683 @@
+================================================================================
+SALESTRACK — COMPLETE PROJECT CONTEXT FILE
+For AI agents, developers, and tools to understand the full project
+================================================================================
+
+LAST UPDATED: May 2026
+GITHUB REPO: https://github.com/sanatanisher01/sales
+LIVE FRONTEND: https://salestrack-frontend.onrender.com
+LIVE BACKEND: https://salestrack-backend-01ag.onrender.com
+FIREBASE PROJECT: room-4cf55
+
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+SalesTrack is a mobile-first Progressive Web App (PWA) for sales force management.
+It has 4 user roles: Admin, Owner, Salesman, Accountant.
+
+Core features:
+- Admin creates Owner accounts
+- Owner creates Salesman and Accountant accounts under their organisation
+- Salesman goes On Duty / Off Duty from mobile
+- While On Duty, salesman's GPS location is tracked every 5-10 seconds
+- Owner sees live map with salesman markers (like Blinkit/Zomato delivery tracking)
+- Route trail (polyline) drawn on map showing where salesman travelled
+- If salesman stops for 5+ minutes, owner gets push notification + in-app alert
+- Salesman submits orders from mobile (works offline, queues and syncs)
+- Owner and Accountant see all orders in real time
+- Owner can update order status (Pending → Confirmed → Delivered → Cancelled)
+- When order status changes, salesman gets in-app notification
+- When new order submitted, owner gets push notification
+- PWA installable on Android and iOS (shows install prompt)
+- Real-time sync via Firestore onSnapshot listeners + REST API fallback
+
+
+================================================================================
+2. TECH STACK
+================================================================================
+
+FRONTEND:
+- React 18 (Vite bundler)
+- React Router v6 (client-side routing)
+- Tailwind CSS (mobile-first styling)
+- Zustand (state management — auth, notifications)
+- Axios (HTTP client)
+- Firebase JS SDK v10 (Firestore onSnapshot real-time listeners, Firebase Auth)
+- React Leaflet + Leaflet (maps, markers, polylines)
+- date-fns (date formatting)
+- react-hot-toast (toast notifications)
+- PWA: custom service worker (public/sw.js), manifest.json
+
+BACKEND:
+- Node.js + Express
+- Firebase Admin SDK (Firestore database, custom token minting)
+- bcryptjs (password hashing, 12 rounds)
+- jsonwebtoken (JWT auth, 30min expiry)
+- web-push (VAPID Web Push notifications)
+- node-cron (stop event detection job, runs every minute)
+- nodemailer (email, optional)
+- helmet, cors, morgan, express-rate-limit
+
+DATABASE:
+- Firebase Firestore (NoSQL)
+- Collections: users, orders, dutySessions, locationPings, stopEvents,
+               notifications, pushSubscriptions
+
+DEPLOYMENT:
+- Frontend: Render Static Site
+- Backend: Render Web Service
+- Database: Firebase Firestore (room-4cf55)
+- CI/CD: Auto-deploy from GitHub (sanatanisher01/sales) on push to main
+
+
+================================================================================
+3. USER ROLES & PERMISSIONS
+================================================================================
+
+ADMIN:
+- Created via seed script (scripts/createAdmin.js)
+- Can create, activate, deactivate Owner accounts
+- Sees paginated list of all owners
+- Login: admin@salestrack.com / Admin@123456
+- Route: /admin
+
+OWNER:
+- Created by Admin
+- Can create Salesman and Accountant accounts (scoped to their org)
+- Sees live map of on-duty salesmen
+- Sees route history (past duty sessions with polyline trails)
+- Sees all orders from their salesmen
+- Can update order status
+- Receives push notifications for: new orders, salesman stops
+- Route: /owner
+
+SALESMAN:
+- Created by Owner
+- Goes On Duty / Off Duty (GPS tracking starts/stops)
+- GPS pings sent every 5-10 seconds while on duty
+- Submits orders (works offline, queues in localStorage)
+- Sees own order history
+- Receives in-app notifications when order status changes
+- Route: /salesman
+
+ACCOUNTANT:
+- Created by Owner
+- Read-only access to all orders from their owner's salesmen
+- Can filter by salesman and date range
+- Route: /accountant
+
+
+================================================================================
+4. DIRECTORY STRUCTURE
+================================================================================
+
+salestrack/
+├── backend/
+│   ├── src/
+│   │   ├── config/
+│   │   │   └── firebase.js          # Firebase Admin SDK init, getDb(), getAdmin()
+│   │   ├── jobs/
+│   │   │   └── stopEventDetector.js # Cron job: detects 5-min stops, sends push
+│   │   ├── middleware/
+│   │   │   ├── auth.js              # JWT verify middleware, requireRole()
+│   │   │   └── rateLimiter.js       # Login rate limiter (express-rate-limit)
+│   │   ├── routes/
+│   │   │   ├── admin.js             # GET/POST/PATCH /api/admin/owners
+│   │   │   ├── auth.js              # POST /api/auth/login, /logout, /firebase-token
+│   │   │   ├── location.js          # POST /api/location/ping, GET /api/location/live
+│   │   │   ├── notifications.js     # GET/POST/PATCH /api/notifications
+│   │   │   ├── orders.js            # CRUD /api/orders, CSV export
+│   │   │   ├── owner.js             # Team management, duty sessions, stop events
+│   │   │   └── salesman.js          # Duty start/stop/status, own orders
+│   │   ├── utils/
+│   │   │   ├── email.js             # Nodemailer email sender
+│   │   │   ├── geo.js               # haversineDistance(), totalDistance(), reverseGeocode()
+│   │   │   ├── jwt.js               # generateToken(), verifyToken()
+│   │   │   ├── password.js          # hashPassword(), comparePassword(), validatePasswordStrength()
+│   │   │   └── webpush.js           # initWebPush(), sendPushNotification() with retry
+│   │   └── index.js                 # Express app entry point
+│   ├── scripts/
+│   │   └── createAdmin.js           # One-time seed: creates admin user in Firestore
+│   ├── .env                         # Local env vars (not committed)
+│   ├── .env.example                 # Template for env vars
+│   ├── .node-version                # Node 20.11.0
+│   ├── .railwayignore
+│   ├── Procfile                     # web: node src/index.js
+│   └── package.json
+│
+├── frontend/
+│   ├── public/
+│   │   ├── _redirects               # /* /index.html 200 (SPA routing for Render)
+│   │   ├── manifest.json            # PWA manifest
+│   │   ├── sw.js                    # Service worker: push notifications, offline cache
+│   │   ├── pwa-192x192.png
+│   │   └── pwa-512x512.png
+│   ├── src/
+│   │   ├── api/
+│   │   │   └── axios.js             # Axios instance, baseURL switches dev/prod, 401 handler
+│   │   ├── components/
+│   │   │   ├── InstallPrompt.jsx    # PWA install banner (Android + iOS instructions)
+│   │   │   ├── NotificationBell.jsx # Owner notification bell with dropdown
+│   │   │   ├── ProtectedRoute.jsx   # Role-based route guard
+│   │   │   └── SalesmanNotificationBell.jsx # Salesman notification bell
+│   │   ├── hooks/
+│   │   │   └── usePushNotifications.js # SW registration, push subscribe, nav handler
+│   │   ├── layouts/
+│   │   │   ├── AdminLayout.jsx      # Admin sidebar nav
+│   │   │   ├── AccountantLayout.jsx # Accountant bottom nav
+│   │   │   ├── OwnerLayout.jsx      # Owner sidebar + notification bell + push hook
+│   │   │   └── SalesmanLayout.jsx   # Salesman bottom nav + notification bell
+│   │   ├── lib/
+│   │   │   └── firebase.js          # Firebase app init, Firestore db, Auth, signInToFirebase()
+│   │   ├── pages/
+│   │   │   ├── LoginPage.jsx        # Login form, handles lockout display
+│   │   │   ├── admin/
+│   │   │   │   ├── AdminDashboard.jsx   # Stats: total/active/inactive owners
+│   │   │   │   └── AdminOwners.jsx      # Paginated owner list, create/activate/deactivate
+│   │   │   ├── owner/
+│   │   │   │   ├── OwnerDashboard.jsx   # Stats cards + quick nav links
+│   │   │   │   ├── OwnerMap.jsx         # Live map (Firestore listener + REST fallback)
+│   │   │   │   ├── OwnerOrders.jsx      # Orders list with filters, status update, CSV export
+│   │   │   │   ├── OwnerTeam.jsx        # Create/manage salesmen and accountants
+│   │   │   │   └── OwnerHistory.jsx     # Past duty sessions + route trail replay
+│   │   │   ├── salesman/
+│   │   │   │   ├── SalesmanDashboard.jsx # On/Off duty toggle, GPS tracking
+│   │   │   │   ├── SalesmanOrders.jsx    # Own order history
+│   │   │   │   └── NewOrder.jsx          # Order form, offline queue, multi-item
+│   │   │   └── accountant/
+│   │   │       ├── AccountantDashboard.jsx # Stats overview
+│   │   │       └── AccountantOrders.jsx    # Order list with filters (read-only)
+│   │   ├── store/
+│   │   │   ├── authStore.js              # Zustand: login/logout, Firebase custom token
+│   │   │   ├── notificationStore.js      # Owner: Firestore listener, push subscribe
+│   │   │   └── salesmanNotificationStore.js # Salesman: Firestore listener
+│   │   ├── App.jsx                  # React Router routes for all 4 roles
+│   │   ├── index.css                # Tailwind + custom component classes
+│   │   └── main.jsx                 # React entry, auth hydrate on load
+│   ├── .env                         # Local Firebase config + API URL
+│   ├── .env.production              # Production Firebase config + Render backend URL
+│   ├── .node-version                # Node 20.11.0
+│   ├── index.html                   # HTML entry, PWA meta tags, Leaflet CSS
+│   ├── package.json
+│   ├── tailwind.config.js
+│   ├── postcss.config.js
+│   └── vite.config.js               # Vite config, dev proxy /api → localhost:5000
+│
+├── .gitignore
+├── DEPLOY.md                        # Step-by-step Render deployment guide
+├── PROJECT.txt                      # This file
+├── package.json                     # Root: no workspaces, build script for Render
+└── render.yaml                      # Render services config
+
+
+================================================================================
+5. FIRESTORE COLLECTIONS (DATABASE SCHEMA)
+================================================================================
+
+COLLECTION: users
+Fields:
+  uid (doc ID)       string   - UUID
+  name               string
+  email              string   - lowercase
+  passwordHash       string   - bcrypt hash
+  role               string   - "admin" | "owner" | "salesman" | "accountant"
+  ownerId            string   - for owner: same as uid; for others: their owner's uid
+  isActive           boolean
+  dutyStatus         string   - "On Duty" | "Off Duty" (salesman only)
+  activeSessionId    string   - current duty session ID (salesman only)
+  liveLocation       object   - { lat, lng, timestamp } (salesman only, updated on each ping)
+  failedLoginAttempts number
+  lockedUntil        timestamp
+  createdAt          timestamp
+  updatedAt          timestamp
+
+COLLECTION: dutySessions
+Fields:
+  salesmanId         string
+  salesmanName       string
+  ownerId            string
+  status             string   - "active" | "ended"
+  startedAt          timestamp
+  endedAt            timestamp | null
+  totalDistanceKm    number
+
+COLLECTION: locationPings
+Fields:
+  salesmanId         string
+  salesmanName       string
+  ownerId            string
+  sessionId          string
+  lat                number
+  lng                number
+  accuracy           number | null
+  timestamp          timestamp
+
+COLLECTION: stopEvents
+Fields:
+  sessionId          string
+  salesmanId         string
+  salesmanName       string
+  ownerId            string
+  lat                number
+  lng                number
+  address            string   - reverse geocoded via OpenStreetMap Nominatim
+  startTime          timestamp
+  endTime            timestamp | null
+  resolved           boolean
+  createdAt          timestamp
+
+COLLECTION: orders
+Fields:
+  salesmanId         string
+  salesmanName       string
+  ownerId            string
+  customerName       string
+  customerPhone      string   - 7-15 digits
+  items              array    - [{ productName, quantity, unitPrice }]
+  note               string
+  totalValue         number   - sum of quantity * unitPrice
+  status             string   - "Pending" | "Confirmed" | "Delivered" | "Cancelled"
+  createdAt          timestamp
+  updatedAt          timestamp
+
+COLLECTION: notifications
+Fields:
+  recipientId        string   - uid of the recipient
+  recipientRole      string   - "owner" | "salesman"
+  ownerId            string   - owner's uid (for owner notifications)
+  salesmanId         string   - salesman's uid (for salesman notifications)
+  type               string   - "new_order" | "order_status" | "stop_event" | "stop_resolved"
+  title              string
+  body               string
+  read               boolean
+  createdAt          timestamp
+  orderId            string   - (for order notifications)
+  stopId             string   - (for stop notifications)
+  status             string   - (for order_status: the new status)
+
+COLLECTION: pushSubscriptions
+Fields:
+  uid                string   - owner's uid (doc ID)
+  subscription       object   - Web Push subscription object { endpoint, keys }
+  updatedAt          timestamp
+
+
+================================================================================
+6. API ENDPOINTS
+================================================================================
+
+BASE URL (production): https://salestrack-backend-01ag.onrender.com/api
+BASE URL (local): http://localhost:5000/api
+
+AUTH (no role required):
+  POST   /auth/login              { email, password } → { token, user }
+  POST   /auth/logout             (authenticated) → logs out
+  POST   /auth/change-password    (authenticated) → changes password
+  GET    /auth/me                 (authenticated) → current user info
+  GET    /auth/firebase-token     (authenticated) → Firebase custom token for Firestore SDK
+
+ADMIN (role: admin):
+  GET    /admin/owners            ?page=1 → paginated owner list
+  POST   /admin/owners            { name, email, password } → create owner
+  PATCH  /admin/owners/:uid/deactivate → deactivate owner + all their team
+  PATCH  /admin/owners/:uid/activate   → activate owner
+
+OWNER (role: owner):
+  GET    /owner/team              → all salesmen + accountants under this owner
+  POST   /owner/team/salesman     { name, phone, email, password } → create salesman
+  POST   /owner/team/accountant   { name, email, password } → create accountant
+  PATCH  /owner/team/:uid/deactivate → deactivate team member
+  PATCH  /owner/team/:uid/activate   → activate team member
+  GET    /owner/duty-sessions     ?salesmanId=&status= → list duty sessions
+  GET    /owner/duty-sessions/:id/trail → GPS trail for a session
+  GET    /owner/stop-events       → all stop events for this owner
+
+SALESMAN (role: salesman):
+  POST   /salesman/duty/start     → start duty session
+  POST   /salesman/duty/stop      → end duty session
+  GET    /salesman/duty/status    → current duty status + session
+  GET    /salesman/orders         → own orders
+
+ORDERS:
+  POST   /orders                  (salesman) { customerName, customerPhone, items, note }
+  GET    /orders                  (owner/accountant) ?salesmanId=&status=&startDate=&endDate=&page=
+  GET    /orders/export/csv       (owner) → CSV download
+  GET    /orders/:id              (owner/accountant) → single order
+  PATCH  /orders/:id/status       (owner) { status } → update order status
+
+LOCATION:
+  POST   /location/ping           (salesman) { lat, lng, accuracy } → record GPS ping
+  GET    /location/live           (owner) → all on-duty salesmen with live location
+
+NOTIFICATIONS:
+  GET    /notifications/vapid-public-key → VAPID public key for push subscription
+  POST   /notifications/subscribe (owner) { subscription } → save push subscription
+  DELETE /notifications/subscribe (owner) → remove push subscription
+  GET    /notifications           (owner/salesman) → recent notifications
+  PATCH  /notifications/:id/read  → mark as read
+  POST   /notifications/read-all  → mark all as read
+
+HEALTH:
+  GET    /health                  → { status: "ok", timestamp }
+
+
+================================================================================
+7. AUTHENTICATION FLOW
+================================================================================
+
+1. User POSTs to /auth/login with email + password
+2. Backend verifies password (bcrypt), checks isActive, checks lockout
+3. Backend returns JWT token (30min expiry) + user object
+4. Frontend stores token in localStorage (Zustand persist)
+5. Frontend sets Authorization: Bearer <token> header on all requests
+6. Frontend calls /auth/firebase-token to get a Firebase custom token
+7. Frontend calls signInWithCustomToken(auth, customToken) to authenticate
+   with Firestore SDK (needed for onSnapshot real-time listeners)
+8. On page reload, main.jsx calls authStore.hydrate() which re-fetches
+   the Firebase custom token and re-signs in
+
+JWT payload: { uid, role, ownerId }
+JWT expiry: 30 minutes (idle timeout)
+Account lockout: 3 failed attempts → 15 min lockout
+Password minimum: 12 characters
+Password hashing: bcrypt with 12 salt rounds
+
+
+================================================================================
+8. REAL-TIME SYNC ARCHITECTURE
+================================================================================
+
+The app uses two layers of real-time sync:
+
+LAYER 1 — Firestore onSnapshot (primary, instant):
+- OwnerMap: listens to users collection (ownerId == owner.uid, filter On Duty in JS)
+- OwnerMap: listens to stopEvents collection (ownerId == owner.uid, filter unresolved in JS)
+- Owner notifications: listens to notifications collection (ownerId == owner.uid)
+- Salesman notifications: listens to notifications collection (recipientId == salesman.uid)
+NOTE: All Firestore queries use single where() clause to avoid composite index requirement.
+Filtering is done in JavaScript memory after fetch.
+
+LAYER 2 — REST API polling (fallback):
+- OwnerMap falls back to polling /location/live every 5s if Firestore listener errors
+- OwnerOrders uses REST API with 15s auto-refresh (Firestore listener removed due to auth issues)
+- SalesmanOrders uses REST API on mount
+
+LAYER 3 — Web Push (background, when app is closed):
+- Backend sends push via web-push library when stop event detected or new order submitted
+- Service worker (public/sw.js) receives push and shows OS notification
+- Tapping notification opens app at /owner/map
+
+
+================================================================================
+9. GPS TRACKING FLOW
+================================================================================
+
+1. Salesman taps "Go On Duty"
+2. App requests browser geolocation permission
+3. On permission granted: POST /salesman/duty/start → creates dutySession doc
+4. App calls navigator.geolocation.watchPosition()
+5. On each position update: POST /location/ping { lat, lng, accuracy }
+6. Backend stores locationPing doc AND updates users/{salesmanId}.liveLocation
+7. Owner's Firestore listener on users collection fires instantly → map marker moves
+8. Stop event cron (every 1 min): checks all active sessions for 5-min stops
+9. If stop detected: creates stopEvent doc, sends push to owner, creates notification doc
+10. Owner's Firestore listener on stopEvents fires → banner appears on map
+11. Salesman taps "Go Off Duty": POST /salesman/duty/stop → session ended, dutyStatus = Off Duty
+12. Owner's Firestore listener fires → marker removed from map
+
+
+================================================================================
+10. STOP EVENT DETECTION ALGORITHM
+================================================================================
+
+File: backend/src/jobs/stopEventDetector.js
+Runs: Every minute via node-cron
+
+Algorithm:
+1. Fetch all dutySessions where status == "active"
+2. For each session, fetch locationPings from last 10 minutes
+3. Filter pings from last 5 minutes (STOP_DURATION_MS = 5 * 60 * 1000)
+4. If fewer than 2 recent pings: skip
+5. Take anchor = first recent ping
+6. Check if ALL recent pings are within 50 metres of anchor (haversine distance)
+7. If all within radius AND no open stopEvent for this session:
+   - Reverse geocode location via OpenStreetMap Nominatim
+   - Create stopEvent doc
+   - Create notification doc for owner
+   - Send Web Push to owner (with 3 retries, 30s apart)
+8. If NOT all within radius AND there IS an open stopEvent:
+   - Mark stopEvent as resolved
+   - Create "moving again" notification for owner
+   - Send Web Push to owner
+
+
+================================================================================
+11. ORDER OFFLINE QUEUE
+================================================================================
+
+File: frontend/src/pages/salesman/NewOrder.jsx
+
+When salesman submits an order while offline:
+1. Order is saved to localStorage key "order_queue" as JSON array
+2. Toast shows "No connection — order saved and will submit when online"
+3. Event listener on window "online" event triggers flushQueue()
+4. flushQueue() iterates queue, POSTs each order to /orders
+5. Successfully submitted orders removed from queue
+6. Failed orders remain in queue for next retry
+7. SalesmanOrders page shows queued count banner
+
+
+================================================================================
+12. PWA / INSTALL PROMPT
+================================================================================
+
+File: frontend/src/components/InstallPrompt.jsx
+
+Android Chrome:
+- Listens for "beforeinstallprompt" event
+- Shows bottom sheet after 1.5 seconds
+- "Install App" button calls deferredPrompt.prompt()
+- Dismissed 3 times → permanently hidden (localStorage pwa-dismiss-count)
+
+iOS Safari:
+- Detected via userAgent (/iphone|ipad|ipod/ + /safari/ without chrome)
+- Shows step-by-step instructions: Share → Add to Home Screen → Add
+- Shows on every page load until dismissed 3 times
+
+Never shows if:
+- Already running in standalone mode (window.matchMedia('(display-mode: standalone)'))
+- window.navigator.standalone === true (iOS standalone)
+- Dismissed 3+ times
+
+
+================================================================================
+13. ENVIRONMENT VARIABLES
+================================================================================
+
+BACKEND (.env):
+  PORT=5000
+  NODE_ENV=development|production
+  JWT_SECRET=<min 32 chars>
+  JWT_EXPIRES_IN=30m
+  FIREBASE_PROJECT_ID=room-4cf55
+  FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@room-4cf55.iam.gserviceaccount.com
+  FIREBASE_PRIVATE_KEY=<full PEM key with \n newlines>
+  VAPID_PUBLIC_KEY=BD0ED9G1sSuUdy-QKBHwU3vu5YA-c62QJHiN2tXpamD258fX8GD93o2A6I6SbDgvd-XU6DjHJkWfT7FSRjVMEX0
+  VAPID_PRIVATE_KEY=_ooQOLN4LvzyAUjD-marwXdC1EvLbnEnJMg_cxVmNUM
+  VAPID_SUBJECT=mailto:admin@salestrack.com
+  FRONTEND_URL=https://salestrack-frontend.onrender.com
+  SMTP_HOST=smtp.gmail.com (optional)
+  SMTP_PORT=587 (optional)
+  SMTP_USER= (optional)
+  SMTP_PASS= (optional)
+
+FRONTEND (.env / .env.production):
+  VITE_FIREBASE_API_KEY=AIzaSyAak_2lmhiWHJdKKOVlxSb-gNPyYzkxYCU
+  VITE_FIREBASE_AUTH_DOMAIN=room-4cf55.firebaseapp.com
+  VITE_FIREBASE_PROJECT_ID=room-4cf55
+  VITE_FIREBASE_STORAGE_BUCKET=room-4cf55.firebasestorage.app
+  VITE_FIREBASE_MESSAGING_SENDER_ID=24195041950
+  VITE_FIREBASE_APP_ID=1:24195041950:web:1e285e692a9dddc60a898f
+  VITE_API_URL=https://salestrack-backend-01ag.onrender.com (production)
+  VITE_API_URL=http://localhost:5000 (development)
+
+
+================================================================================
+14. KNOWN ISSUES & IMPORTANT NOTES
+================================================================================
+
+1. FIRESTORE COMPOSITE INDEXES:
+   All Firestore queries intentionally use only ONE where() clause.
+   Multi-field filtering is done in JavaScript memory.
+   Reason: Composite indexes require manual creation in Firebase Console.
+   If you add orderBy() to any query, it will fail with FAILED_PRECONDITION error.
+
+2. RENDER FREE TIER SLEEP:
+   Backend sleeps after 15 min of inactivity. First request takes ~30 seconds.
+   Upgrade to Starter ($7/mo) for always-on.
+
+3. SPA ROUTING ON RENDER:
+   frontend/public/_redirects contains "/* /index.html 200"
+   This file is copied to dist/ on build and tells Render to serve index.html
+   for all routes. Do NOT add rewrite rules in Render dashboard — they conflict.
+
+4. FIREBASE PRIVATE KEY ON RENDER:
+   Paste the key with literal \n characters (not real newlines) in Render env vars.
+   The backend code does .replace(/\\n/g, '\n') to convert them.
+
+5. FIREBASE AUTH REQUIRED FOR FIRESTORE:
+   The frontend uses Firebase custom tokens (minted by backend via Admin SDK)
+   to authenticate with Firestore for onSnapshot listeners.
+   If /auth/firebase-token fails, Firestore listeners will fail silently.
+   Pages fall back to REST API polling in this case.
+
+6. GPS ON iOS:
+   iOS Safari requires HTTPS for geolocation. Works on the deployed site.
+   Does not work on http://localhost on iOS.
+
+7. PUSH NOTIFICATIONS ON iOS:
+   Requires iOS 16.4+ and the app must be installed to home screen (PWA).
+   Does not work in regular Safari browser tab on iOS.
+
+8. OWNER'S ownerId FIELD:
+   For Owner users, ownerId == their own uid.
+   For Salesman/Accountant, ownerId == their owner's uid.
+   This is used to scope all queries.
+
+9. ADMIN USER:
+   Created once via: node backend/scripts/createAdmin.js
+   Credentials: admin@salestrack.com / Admin@123456
+   Admin does NOT have an ownerId.
+
+
+================================================================================
+15. LOCAL DEVELOPMENT SETUP
+================================================================================
+
+Prerequisites: Node.js 20+, Git
+
+1. Clone repo:
+   git clone https://github.com/sanatanisher01/sales.git
+   cd sales
+
+2. Install backend dependencies:
+   cd backend && npm install
+
+3. Install frontend dependencies:
+   cd ../frontend && npm install
+
+4. Create backend/.env (copy from backend/.env.example, fill Firebase credentials)
+
+5. Create frontend/.env (copy Firebase web config values)
+
+6. Start backend:
+   cd backend && npm start
+   (runs on http://localhost:5000)
+
+7. Start frontend:
+   cd frontend && npm run dev
+   (runs on http://localhost:5173, proxies /api to localhost:5000)
+
+8. Create admin user (first time only):
+   cd backend && node scripts/createAdmin.js
+
+9. Open http://localhost:5173
+   Login: admin@salestrack.com / Admin@123456
+
+
+================================================================================
+16. DEPLOYMENT (RENDER)
+================================================================================
+
+See DEPLOY.md for full step-by-step guide.
+
+Quick summary:
+- Backend: Render Web Service, rootDir=backend, start=node src/index.js
+- Frontend: Render Static Site, buildCommand=npm run build, publishDir=frontend/dist
+- Both connected to GitHub repo sanatanisher01/sales, auto-deploy on push to main
+- Firebase Firestore: room-4cf55 (already set up)
+- Firebase Auth: Anonymous provider must be enabled for Firestore SDK to work
+
+
+================================================================================
+17. NOTIFICATION TYPES REFERENCE
+================================================================================
+
+type: "new_order"
+  - Triggered: when salesman submits an order
+  - Recipient: owner
+  - Push: yes
+  - Title: "New order from {salesmanName}"
+  - Body: "Customer: {customerName} · ₹{totalValue}"
+
+type: "order_status"
+  - Triggered: when owner changes order status
+  - Recipient: salesman
+  - Push: yes (if salesman has push subscription)
+  - Title: "Order {status} {emoji}"
+  - Body: "Your order for {customerName} has been marked {status}"
+
+type: "stop_event"
+  - Triggered: when salesman stops for 5+ minutes
+  - Recipient: owner
+  - Push: yes
+  - Title: "{salesmanName} stopped"
+  - Body: "Stopped at: {address}"
+
+type: "stop_resolved"
+  - Triggered: when stopped salesman starts moving again
+  - Recipient: owner
+  - Push: yes
+  - Title: "{salesmanName} is moving again"
+  - Body: "Resumed from: {address}"
+
+
+================================================================================
+18. TAILWIND CUSTOM CLASSES (index.css)
+================================================================================
+
+.btn           - base button (min 44x44px touch target)
+.btn-primary   - blue filled button
+.btn-secondary - white outlined button
+.btn-danger    - red filled button
+.btn-success   - green filled button
+.input         - form input field
+.input-error   - input with red border
+.label         - form label
+.card          - white rounded card with shadow
+.badge         - small pill badge
+.badge-green   - green badge
+.badge-red     - red badge
+.badge-yellow  - yellow badge
+.badge-blue    - blue badge
+.badge-gray    - gray badge
+
+Primary color: #2563eb (Tailwind blue-600)
+Primary scale: 50, 100, 500, 600, 700, 900
+
+
+================================================================================
+END OF PROJECT CONTEXT FILE
+================================================================================
