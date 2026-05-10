@@ -45,16 +45,16 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_FIREBASE_API_KEY
-        sync: false          # set manually
+        value: AIzaSyAak_2lmhiWHJdKKOVlxSb-gNPyYzkxYCU
       - key: VITE_FIREBASE_AUTH_DOMAIN
         value: room-4cf55.firebaseapp.com
       - key: VITE_FIREBASE_PROJECT_ID
         value: room-4cf55
       - key: VITE_FIREBASE_STORAGE_BUCKET
-        value: room-4cf55.appspot.com
+        value: room-4cf55.firebasestorage.app
       - key: VITE_FIREBASE_MESSAGING_SENDER_ID
-        value: "118412863960313180091"
+        value: "24195041950"
       - key: VITE_FIREBASE_APP_ID
-        sync: false          # set manually
+        value: 1:24195041950:web:1e285e692a9dddc60a898f
       - key: VITE_API_URL
         sync: false          # set after backend is deployed

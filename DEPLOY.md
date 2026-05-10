@@ -4,20 +4,13 @@ Repo: https://github.com/sanatanisher01/sales
 
 ---
 
-## Before you start — 2 things to prepare
+## Before you start — Enable Firebase Authentication
 
-### A) Firebase Web App config
-1. Go to https://console.firebase.google.com/project/room-4cf55/settings/general
-2. Scroll to "Your apps" → click the Web app (or click "Add app" → Web)
-3. Note down these values:
-   - `apiKey`
-   - `appId`
-   (the rest are already filled in render.yaml)
-
-### B) Enable Firebase Authentication
 1. Go to https://console.firebase.google.com/project/room-4cf55/authentication
-2. Click "Get started" → Enable the **Anonymous** provider
-   (needed for Firestore real-time listeners)
+2. Click **Get started**
+3. Click **Anonymous** → Enable → Save
+
+This is required for Firestore real-time listeners to work.
 
 ---
 
@@ -43,14 +36,19 @@ Repo: https://github.com/sanatanisher01/sales
 | `JWT_EXPIRES_IN` | `30m` |
 | `FIREBASE_PROJECT_ID` | `room-4cf55` |
 | `FIREBASE_CLIENT_EMAIL` | `firebase-adminsdk-fbsvc@room-4cf55.iam.gserviceaccount.com` |
-| `FIREBASE_PRIVATE_KEY` | *(paste the full private key from your service account JSON — keep the \n characters)* |
+| `FIREBASE_PRIVATE_KEY` | *(see note below)* |
 | `VAPID_PUBLIC_KEY` | `BD0ED9G1sSuUdy-QKBHwU3vu5YA-c62QJHiN2tXpamD258fX8GD93o2A6I6SbDgvd-XU6DjHJkWfT7FSRjVMEX0` |
 | `VAPID_PRIVATE_KEY` | `_ooQOLN4LvzyAUjD-marwXdC1EvLbnEnJMg_cxVmNUM` |
 | `VAPID_SUBJECT` | `mailto:admin@salestrack.com` |
-| `FRONTEND_URL` | *(leave blank for now — fill after Step 2)* |
+| `FRONTEND_URL` | *(leave blank — fill after Step 2)* |
+
+### FIREBASE_PRIVATE_KEY note
+Paste the entire private key from your service account JSON file.
+In Render, paste it exactly as-is including the `-----BEGIN PRIVATE KEY-----` header.
+Render handles multiline env vars correctly.
 
 6. Click **Create Web Service**
-7. Wait for deploy → copy your backend URL e.g. `https://salestrack-backend.onrender.com`
+7. Wait ~3 min for deploy → copy your URL: `https://salestrack-backend.onrender.com`
 
 ---
 
@@ -63,32 +61,33 @@ Repo: https://github.com/sanatanisher01/sales
    - **Root Directory**: `frontend`
    - **Build Command**: `npm install && npm run build`
    - **Publish Directory**: `dist`
-4. Add these Environment Variables:
+4. Add these Environment Variables (all pre-filled):
 
 | Key | Value |
 |-----|-------|
-| `VITE_FIREBASE_API_KEY` | *(your Firebase apiKey from Step A)* |
+| `VITE_FIREBASE_API_KEY` | `AIzaSyAak_2lmhiWHJdKKOVlxSb-gNPyYzkxYCU` |
 | `VITE_FIREBASE_AUTH_DOMAIN` | `room-4cf55.firebaseapp.com` |
 | `VITE_FIREBASE_PROJECT_ID` | `room-4cf55` |
-| `VITE_FIREBASE_STORAGE_BUCKET` | `room-4cf55.appspot.com` |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `118412863960313180091` |
-| `VITE_FIREBASE_APP_ID` | *(your Firebase appId from Step A)* |
-| `VITE_API_URL` | `https://salestrack-backend.onrender.com` *(your backend URL from Step 1)* |
+| `VITE_FIREBASE_STORAGE_BUCKET` | `room-4cf55.firebasestorage.app` |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `24195041950` |
+| `VITE_FIREBASE_APP_ID` | `1:24195041950:web:1e285e692a9dddc60a898f` |
+| `VITE_API_URL` | `https://salestrack-backend.onrender.com` |
 
 5. Click **Create Static Site**
-6. Wait for deploy → copy your frontend URL e.g. `https://salestrack-frontend.onrender.com`
+6. Wait ~2 min → copy your URL: `https://salestrack-frontend.onrender.com`
 
 ---
 
-## Step 3 — Link them together
+## Step 3 — Link Backend to Frontend
 
-1. Go back to your **backend** service on Render
-2. Environment → update `FRONTEND_URL` = `https://salestrack-frontend.onrender.com`
-3. Click **Save Changes** → backend auto-redeploys
+1. Go to your **salestrack-backend** service on Render
+2. **Environment** tab → add/update:
+   - `FRONTEND_URL` = `https://salestrack-frontend.onrender.com`
+3. Click **Save Changes** → backend redeploys automatically
 
 ---
 
-## Step 4 — Deploy Firestore Security Rules
+## Step 4 — Deploy Firestore Security Rules (optional but recommended)
 
 ```bash
 npm install -g firebase-tools
@@ -103,11 +102,11 @@ firebase deploy --only firestore:rules
 
 | | URL |
 |--|--|
-| **App** | https://salestrack-frontend.onrender.com |
-| **API** | https://salestrack-backend.onrender.com/api/health |
+| **App (Frontend)** | https://salestrack-frontend.onrender.com |
+| **API (Backend)** | https://salestrack-backend.onrender.com/api/health |
 
-**Login**: admin@salestrack.com / Admin@123456
+**Admin login**: admin@salestrack.com / Admin@123456
 
-> Note: Free tier on Render spins down after 15 min of inactivity.
-> First request after sleep takes ~30 seconds to wake up.
-> Upgrade to Starter ($7/mo) to keep it always-on.
+> Free tier note: Render free services sleep after 15 min of inactivity.
+> First request after sleep takes ~30 sec to wake up.
+> Upgrade to Starter ($7/mo) for always-on.
