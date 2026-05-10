@@ -38,10 +38,6 @@ services:
     buildCommand: npm run build
     staticPublishPath: frontend/dist
     plan: free
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
     envVars:
       - key: VITE_FIREBASE_API_KEY
         value: AIzaSyAak_2lmhiWHJdKKOVlxSb-gNPyYzkxYCU
