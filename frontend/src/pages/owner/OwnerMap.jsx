@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../store/authStore';
+import api from '../../api/axios';
 import { format } from 'date-fns';
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -44,7 +45,7 @@ function FitBounds({ positions }) {
 
 function formatTs(ts) {
   if (!ts) return '—';
-  const d = ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
+  const d = ts.seconds ? new Date(ts.seconds * 1000) : ts._seconds ? new Date(ts._seconds * 1000) : new Date(ts);
   return format(d, 'HH:mm:ss');
 }
 
@@ -52,58 +53,105 @@ function isStale(loc) {
   if (!loc.liveLocation?.timestamp) return true;
   const ts = loc.liveLocation.timestamp.seconds
     ? loc.liveLocation.timestamp.seconds * 1000
+    : loc.liveLocation.timestamp._seconds
+    ? loc.liveLocation.timestamp._seconds * 1000
     : new Date(loc.liveLocation.timestamp).getTime();
   return Date.now() - ts > 30000;
 }
 
 export default function OwnerMap() {
   const { user } = useAuthStore();
-  const [salesmen, setSalesmen] = useState([]);   // on-duty salesmen with liveLocation
-  const [stopEvents, setStopEvents] = useState([]); // active stop events
+  const [salesmen, setSalesmen] = useState([]);
+  const [stopEvents, setStopEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [firestoreError, setFirestoreError] = useState(false);
+  const pollRef = useRef(null);
 
-  // Real-time listener: on-duty salesmen under this owner
+  // Fallback: fetch via REST API (used when Firestore listener fails)
+  const fetchViaApi = useCallback(async () => {
+    try {
+      const [locRes, stopRes] = await Promise.all([
+        api.get('/location/live'),
+        api.get('/owner/stop-events'),
+      ]);
+      const locs = (locRes.data.locations || []).map((l) => ({
+        uid: l.uid,
+        name: l.name,
+        dutyStatus: 'On Duty',
+        liveLocation: l.liveLocation,
+        activeSessionId: l.activeSessionId,
+      }));
+      setSalesmen(locs);
+      setStopEvents((stopRes.data.events || []).filter((e) => !e.resolved));
+      setLastUpdated(new Date());
+      setLoading(false);
+    } catch {
+      setLoading(false);
+    }
+  }, []);
+
+  // Primary: Firestore real-time listener
+  // Uses single where('ownerId') then filters dutyStatus in memory — avoids composite index
   useEffect(() => {
     if (!user?.uid) return;
 
     const q = query(
       collection(db, 'users'),
-      where('ownerId', '==', user.uid),
-      where('dutyStatus', '==', 'On Duty')
+      where('ownerId', '==', user.uid)
     );
 
-    const unsub = onSnapshot(q, (snap) => {
-      const list = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
-      setSalesmen(list);
-      setLastUpdated(new Date());
-      setLoading(false);
-    }, (err) => {
-      console.error('Salesman listener error:', err);
-      setLoading(false);
-    });
+    const unsub = onSnapshot(q,
+      (snap) => {
+        setFirestoreError(false);
+        // Filter on-duty salesmen in memory — no composite index needed
+        const list = snap.docs
+          .map((d) => ({ uid: d.id, ...d.data() }))
+          .filter((u) => u.role === 'salesman' && u.dutyStatus === 'On Duty');
+        setSalesmen(list);
+        setLastUpdated(new Date());
+        setLoading(false);
+        // Clear fallback poll if Firestore works
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      },
+      (err) => {
+        console.error('Firestore listener error:', err.code, err.message);
+        setFirestoreError(true);
+        setLoading(false);
+        // Fall back to REST API polling every 5s
+        fetchViaApi();
+        pollRef.current = setInterval(fetchViaApi, 5000);
+      }
+    );
 
-    return () => unsub();
-  }, [user?.uid]);
+    return () => {
+      unsub();
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
+  }, [user?.uid, fetchViaApi]);
 
-  // Real-time listener: active (unresolved) stop events for this owner
+  // Stop events listener — single where, no composite index
   useEffect(() => {
     if (!user?.uid) return;
 
     const q = query(
       collection(db, 'stopEvents'),
-      where('ownerId', '==', user.uid),
-      where('resolved', '==', false)
+      where('ownerId', '==', user.uid)
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      setStopEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const events = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((e) => !e.resolved);
+      setStopEvents(events);
+    }, () => {
+      // silent fallback — stop events already fetched in fetchViaApi
     });
 
     return () => unsub();
   }, [user?.uid]);
 
-  const activeLocations = salesmen.filter((s) => s.liveLocation);
+  const activeLocations = salesmen.filter((s) => s.liveLocation?.lat && s.liveLocation?.lng);
   const mapCenter = activeLocations.length > 0
     ? [activeLocations[0].liveLocation.lat, activeLocations[0].liveLocation.lng]
     : [20.5937, 78.9629];
@@ -113,9 +161,11 @@ export default function OwnerMap() {
       {/* Status bar */}
       <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${activeLocations.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-          <span className="text-sm font-medium text-gray-700">{activeLocations.length} on duty</span>
-          <span className="text-xs text-green-600 font-medium">● Live</span>
+          <span className={`w-2 h-2 rounded-full ${salesmen.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+          <span className="text-sm font-medium text-gray-700">{salesmen.length} on duty</span>
+          <span className={`text-xs font-medium ${firestoreError ? 'text-orange-500' : 'text-green-600'}`}>
+            {firestoreError ? '● Polling' : '● Live'}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           {stopEvents.length > 0 && (
@@ -170,11 +220,16 @@ export default function OwnerMap() {
               );
             })}
 
+            {/* Show all on-duty salesmen in list even without GPS yet */}
             {activeLocations.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1000]">
                 <div className="bg-white/90 rounded-xl px-6 py-4 shadow text-center">
                   <div className="text-2xl mb-1">🗺️</div>
-                  <div className="text-gray-600 font-medium">No salesmen on duty</div>
+                  <div className="text-gray-600 font-medium">
+                    {salesmen.length > 0
+                      ? `${salesmen.length} salesman on duty — waiting for GPS…`
+                      : 'No salesmen on duty'}
+                  </div>
                 </div>
               </div>
             )}
@@ -182,7 +237,7 @@ export default function OwnerMap() {
         </div>
       )}
 
-      {/* Salesman list */}
+      {/* Salesman list — shows ALL on-duty, even without GPS */}
       {salesmen.length > 0 && (
         <div className="bg-white border-t border-gray-200 flex-shrink-0 max-h-40 overflow-y-auto">
           {salesmen.map((s, idx) => {
@@ -190,12 +245,13 @@ export default function OwnerMap() {
             const stale = isStale(s);
             return (
               <div key={s.uid} className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 last:border-0">
-                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stale ? '#9ca3af' : color }} />
+                <span className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: s.liveLocation ? (stale ? '#9ca3af' : color) : '#d1d5db' }} />
                 <span className="text-sm font-medium text-gray-800 flex-1">{s.name}</span>
                 {s.liveLocation
                   ? <span className="text-xs text-gray-400">{formatTs(s.liveLocation.timestamp)}</span>
-                  : <span className="text-xs text-gray-400">No location</span>}
-                {stale && <span className="text-xs text-orange-500">Signal lost</span>}
+                  : <span className="text-xs text-orange-400">No GPS yet</span>}
+                {s.liveLocation && stale && <span className="text-xs text-orange-500">Signal lost</span>}
               </div>
             );
           })}
@@ -210,6 +266,8 @@ function StopBanner({ event }) {
   useEffect(() => {
     const start = event.startTime?.seconds
       ? event.startTime.seconds * 1000
+      : event.startTime?._seconds
+      ? event.startTime._seconds * 1000
       : new Date(event.startTime).getTime();
     const tick = () => setElapsed(Math.floor((Date.now() - start) / 60000));
     tick();
