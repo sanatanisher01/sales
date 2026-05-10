@@ -3,6 +3,8 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import NotificationBell from '../components/NotificationBell';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import IOSInstallGuide from '../components/IOSInstallGuide';
 
 const navItems = [
   { to: '/owner', label: 'Dashboard', icon: '🏠', end: true },
@@ -17,8 +19,8 @@ export default function OwnerLayout() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Register SW, subscribe to push, poll notifications
   usePushNotifications();
+  const { isInstallable, isIOS, showIOSGuide, setShowIOSGuide, install } = useInstallPrompt();
 
   const handleLogout = async () => {
     await logout();
@@ -40,7 +42,12 @@ export default function OwnerLayout() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm hidden sm:block">{user?.name}</span>
-          {/* Notification Bell */}
+          {isInstallable && (
+            <button onClick={install}
+              className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1 rounded-lg min-h-[36px] flex items-center gap-1">
+              📲 <span className="hidden sm:inline">Install App</span>
+            </button>
+          )}
           <NotificationBell />
           <button
             onClick={handleLogout}
@@ -92,6 +99,7 @@ export default function OwnerLayout() {
           <Outlet />
         </main>
       </div>
+      {isIOS && <IOSInstallGuide show={showIOSGuide} onClose={() => setShowIOSGuide(false)} />}
     </div>
   );
 }

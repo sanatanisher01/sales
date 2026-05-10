@@ -1,6 +1,8 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import IOSInstallGuide from '../components/IOSInstallGuide';
 
 const navItems = [
   { to: '/accountant', label: 'Dashboard', icon: '🏠', end: true },
@@ -10,6 +12,7 @@ const navItems = [
 export default function AccountantLayout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const { isInstallable, isIOS, showIOSGuide, setShowIOSGuide, install } = useInstallPrompt();
 
   const handleLogout = async () => {
     await logout();
@@ -22,6 +25,12 @@ export default function AccountantLayout() {
         <span className="font-bold text-lg">SalesTrack</span>
         <div className="flex items-center gap-2">
           <span className="text-sm">{user?.name}</span>
+          {isInstallable && (
+            <button onClick={install}
+              className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1 rounded-lg min-h-[36px] flex items-center gap-1">
+              📲 <span className="hidden sm:inline">Install App</span>
+            </button>
+          )}
           <button onClick={handleLogout} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1 rounded-lg min-h-[36px]">
             Logout
           </button>
@@ -52,6 +61,7 @@ export default function AccountantLayout() {
           ))}
         </ul>
       </nav>
+      {isIOS && <IOSInstallGuide show={showIOSGuide} onClose={() => setShowIOSGuide(false)} />}
     </div>
   );
 }

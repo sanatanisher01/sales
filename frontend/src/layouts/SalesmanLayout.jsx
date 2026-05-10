@@ -3,6 +3,8 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import SalesmanNotificationBell from '../components/SalesmanNotificationBell';
 import { useSalesmanNotificationStore } from '../store/salesmanNotificationStore';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import IOSInstallGuide from '../components/IOSInstallGuide';
 
 const navItems = [
   { to: '/salesman', label: 'Home', icon: '🏠', end: true },
@@ -14,6 +16,7 @@ export default function SalesmanLayout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const { startListener, stopListener, unreadCount } = useSalesmanNotificationStore();
+  const { isInstallable, isIOS, showIOSGuide, setShowIOSGuide, install } = useInstallPrompt();
 
   // Start real-time Firestore listener
   useEffect(() => {
@@ -34,6 +37,12 @@ export default function SalesmanLayout() {
         <span className="font-bold text-lg">SalesTrack</span>
         <div className="flex items-center gap-2">
           <span className="text-sm hidden sm:block">{user?.name}</span>
+          {isInstallable && (
+            <button onClick={install}
+              className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1 rounded-lg min-h-[36px] flex items-center gap-1">
+              📲 <span className="hidden sm:inline">Install App</span>
+            </button>
+          )}
           {/* Notification Bell */}
           <SalesmanNotificationBell />
           <button
@@ -78,6 +87,7 @@ export default function SalesmanLayout() {
           ))}
         </ul>
       </nav>
+      {isIOS && <IOSInstallGuide show={showIOSGuide} onClose={() => setShowIOSGuide(false)} />}
     </div>
   );
 }
