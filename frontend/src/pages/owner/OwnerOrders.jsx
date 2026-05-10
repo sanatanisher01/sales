@@ -1,7 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
-import { useAuthStore } from '../../store/authStore';
+import React, { useEffect, useState, useCallback } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -28,7 +25,6 @@ function formatDate(ts) {
 }
 
 export default function OwnerOrders() {
-  const { user } = useAuthStore();
   const [allOrders, setAllOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -44,54 +40,39 @@ export default function OwnerOrders() {
       .catch(() => {});
   }, []);
 
-  // Real-time Firestore listener for orders
-  useEffect(() => {
-    if (!user?.uid) return;
+  // Fetch orders via REST API — reliable, no Firestore auth needed
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
-
-    const q = query(collection(db, 'orders'), where('ownerId', '==', user.uid));
-
-    const unsub = onSnapshot(q, (snap) => {
-      const orders = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const ta = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
-          const tb = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
-          return tb - ta;
-        });
-      setAllOrders(orders);
+    try {
+      const params = new URLSearchParams();
+      if (filters.salesmanId) params.set('salesmanId', filters.salesmanId);
+      if (filters.status) params.set('status', filters.status);
+      if (filters.startDate) params.set('startDate', filters.startDate);
+      if (filters.endDate) params.set('endDate', filters.endDate);
+      const res = await api.get(`/orders?${params}`);
+      setAllOrders(res.data.orders || []);
+    } catch (err) {
+      toast.error('Failed to load orders');
+    } finally {
       setLoading(false);
-    }, (err) => {
-      console.error('Orders listener error:', err);
-      setLoading(false);
-    });
-
-    return () => unsub();
-  }, [user?.uid]);
-
-  // Apply filters in memory
-  const orders = allOrders.filter((o) => {
-    if (filters.salesmanId && o.salesmanId !== filters.salesmanId) return false;
-    if (filters.status && o.status !== filters.status) return false;
-    if (filters.startDate) {
-      const d = toDate(o.createdAt);
-      if (!d || d < new Date(filters.startDate)) return false;
     }
-    if (filters.endDate) {
-      const d = toDate(o.createdAt);
-      const end = new Date(filters.endDate); end.setHours(23, 59, 59, 999);
-      if (!d || d > end) return false;
-    }
-    return true;
-  });
+  }, [filters]);
+
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // Auto-refresh every 15 seconds
+  useEffect(() => {
+    const id = setInterval(fetchOrders, 15000);
+    return () => clearInterval(id);
+  }, [fetchOrders]);
 
   const updateStatus = async (orderId, status) => {
     setUpdatingStatus(true);
     try {
       await api.patch(`/orders/${orderId}/status`, { status });
       toast.success('Status updated');
-      // onSnapshot auto-updates the list; update modal too
       setSelected((prev) => prev ? { ...prev, status } : prev);
+      fetchOrders();
     } catch {
       toast.error('Failed to update status');
     } finally {
@@ -122,8 +103,8 @@ export default function OwnerOrders() {
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold text-gray-800">Orders ({orders.length})</h1>
-          <span className="text-xs text-green-600 font-medium">● Live</span>
+          <h1 className="text-2xl font-bold text-gray-800">Orders ({allOrders.length})</h1>
+          <button onClick={fetchOrders} className="text-xs text-primary-600 hover:underline min-h-[32px] px-1">↻ Refresh</button>
         </div>
         <button onClick={handleExport} disabled={exporting} className="btn-secondary text-sm">
           {exporting ? 'Exporting…' : '⬇ CSV'}
@@ -160,12 +141,12 @@ export default function OwnerOrders() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-gray-400">Connecting…</div>
-      ) : orders.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">Loading…</div>
+      ) : allOrders.length === 0 ? (
         <div className="text-center py-12 text-gray-400">No orders found</div>
       ) : (
         <div className="space-y-3">
-          {orders.map((order) => (
+          {allOrders.map((order) => (
             <button key={order.id} onClick={() => setSelected(order)}
               className="card w-full text-left hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between gap-2">
