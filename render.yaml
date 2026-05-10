@@ -13,31 +13,30 @@ services:
       - key: PORT
         value: 10000
       - key: JWT_SECRET
-        sync: false          # set manually in Render dashboard
+        sync: false
       - key: JWT_EXPIRES_IN
         value: 30m
       - key: FIREBASE_PROJECT_ID
         value: room-4cf55
       - key: FIREBASE_CLIENT_EMAIL
-        sync: false          # set manually
+        sync: false
       - key: FIREBASE_PRIVATE_KEY
-        sync: false          # set manually
+        sync: false
       - key: VAPID_PUBLIC_KEY
         value: BD0ED9G1sSuUdy-QKBHwU3vu5YA-c62QJHiN2tXpamD258fX8GD93o2A6I6SbDgvd-XU6DjHJkWfT7FSRjVMEX0
       - key: VAPID_PRIVATE_KEY
-        sync: false          # set manually
+        sync: false
       - key: VAPID_SUBJECT
         value: mailto:admin@salestrack.com
       - key: FRONTEND_URL
-        sync: false          # set after frontend is deployed
+        sync: false
 
   # ── Frontend (Static Site) ─────────────────────────────────────────────────
   - type: web
     name: salestrack-frontend
     runtime: static
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    buildCommand: npm run build
+    staticPublishPath: frontend/dist
     plan: free
     routes:
       - type: rewrite
@@ -57,4 +56,4 @@ services:
       - key: VITE_FIREBASE_APP_ID
         value: 1:24195041950:web:1e285e692a9dddc60a898f
       - key: VITE_API_URL
-        sync: false          # set after backend is deployed
+        sync: false

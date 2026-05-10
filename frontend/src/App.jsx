@@ -30,12 +30,15 @@ import AccountantDashboard from './pages/accountant/AccountantDashboard';
 import AccountantOrders from './pages/accountant/AccountantOrders';
 
 import ProtectedRoute from './components/ProtectedRoute';
+import InstallPrompt from './components/InstallPrompt';
 
 export default function App() {
   const { user } = useAuthStore();
 
   return (
-    <Routes>
+    <>
+      <InstallPrompt />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
 
       {/* Admin */}
@@ -77,5 +80,6 @@ export default function App() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
