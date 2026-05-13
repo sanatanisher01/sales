@@ -58,21 +58,25 @@ router.post('/ping', authenticate, requireRole('salesman'), async (req, res, nex
 router.get('/live', authenticate, requireRole('owner'), async (req, res, next) => {
   try {
     const db = getDb();
+    // Single where — avoids composite index; filter role+dutyStatus in memory
     const snapshot = await db.collection('users')
       .where('ownerId', '==', req.user.uid)
-      .where('role', '==', 'salesman')
-      .where('dutyStatus', '==', 'On Duty')
       .get();
 
-    const locations = snapshot.docs.map((doc) => {
-      const d = doc.data();
-      return {
-        uid: doc.id,
-        name: d.name,
-        liveLocation: d.liveLocation || null,
-        activeSessionId: d.activeSessionId || null,
-      };
-    });
+    const locations = snapshot.docs
+      .filter((doc) => {
+        const d = doc.data();
+        return d.role === 'salesman' && d.dutyStatus === 'On Duty';
+      })
+      .map((doc) => {
+        const d = doc.data();
+        return {
+          uid: doc.id,
+          name: d.name,
+          liveLocation: d.liveLocation || null,
+          activeSessionId: d.activeSessionId || null,
+        };
+      });
 
     res.json({ locations });
   } catch (err) {

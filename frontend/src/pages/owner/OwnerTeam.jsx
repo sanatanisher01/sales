@@ -3,7 +3,6 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 
 const ROLES = ['salesman', 'accountant'];
-
 const emptyForm = { name: '', phone: '', email: '', password: '', role: 'salesman' };
 
 function validate(form) {
@@ -86,29 +85,22 @@ export default function OwnerTeam() {
         </button>
       </div>
 
-      {/* Create form */}
       {showForm && (
         <div className="card mb-5">
           <h2 className="font-semibold text-gray-700 mb-4">Add Team Member</h2>
           <form onSubmit={handleCreate} noValidate className="space-y-4">
-            {/* Role selector */}
             <div className="flex gap-2">
               {ROLES.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setForm({ ...form, role: r })}
+                <button key={r} type="button" onClick={() => setForm({ ...form, role: r })}
                   className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors min-h-[44px] ${
                     form.role === r
                       ? 'bg-primary-600 text-white border-primary-600'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
+                  }`}>
                   {r === 'salesman' ? '👤 Salesman' : '🧾 Accountant'}
                 </button>
               ))}
             </div>
-
             <div>
               <label className="label">Full Name</label>
               <input className={`input ${formErrors.name ? 'input-error' : ''}`}
@@ -116,7 +108,6 @@ export default function OwnerTeam() {
                 placeholder="Full name" />
               {formErrors.name && <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>}
             </div>
-
             {form.role === 'salesman' && (
               <div>
                 <label className="label">Phone Number</label>
@@ -126,7 +117,6 @@ export default function OwnerTeam() {
                 {formErrors.phone && <p className="mt-1 text-xs text-red-600">{formErrors.phone}</p>}
               </div>
             )}
-
             <div>
               <label className="label">Email Address</label>
               <input type="email" className={`input ${formErrors.email ? 'input-error' : ''}`}
@@ -134,7 +124,6 @@ export default function OwnerTeam() {
                 placeholder="member@company.com" />
               {formErrors.email && <p className="mt-1 text-xs text-red-600">{formErrors.email}</p>}
             </div>
-
             <div>
               <label className="label">Password (min 12 characters)</label>
               <input type="password" className={`input ${formErrors.password ? 'input-error' : ''}`}
@@ -142,7 +131,6 @@ export default function OwnerTeam() {
                 placeholder="••••••••••••" />
               {formErrors.password && <p className="mt-1 text-xs text-red-600">{formErrors.password}</p>}
             </div>
-
             <button type="submit" disabled={submitting} className="btn-primary w-full">
               {submitting ? 'Creating…' : 'Create Member'}
             </button>
@@ -150,7 +138,6 @@ export default function OwnerTeam() {
         </div>
       )}
 
-      {/* Filter tabs */}
       <div className="flex gap-2 mb-4">
         {['all', 'salesman', 'accountant'].map((f) => (
           <button key={f} onClick={() => setFilter(f)}
@@ -186,17 +173,16 @@ export default function OwnerTeam() {
                 {member.phone && <div className="text-xs text-gray-400">{member.phone}</div>}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={member.isActive ? 'badge-green' : 'badge-red'}>
+                {/* Fixed: added badge base class */}
+                <span className={`badge ${member.isActive ? 'badge-green' : 'badge-red'}`}>
                   {member.isActive ? 'Active' : 'Inactive'}
                 </span>
-                <button
-                  onClick={() => toggleActive(member)}
+                <button onClick={() => toggleActive(member)}
                   className={`text-xs px-3 py-1 rounded-lg min-h-[36px] font-medium transition-colors ${
                     member.isActive
                       ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
                       : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
-                  }`}
-                >
+                  }`}>
                   {member.isActive ? 'Deactivate' : 'Activate'}
                 </button>
               </div>

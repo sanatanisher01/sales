@@ -1,17 +1,8 @@
-// SalesTrack Service Worker — handles push notifications and app shell caching
+// SalesTrack Service Worker — push notifications + offline support
 
-const CACHE_NAME = 'salestrack-v1';
-const APP_SHELL = ['/', '/index.html'];
+const CACHE_NAME = 'salestrack-v2';
 
-// Install — cache app shell
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
-  );
-  self.skipWaiting();
-});
-
-// Activate — clean old caches
+// Activate — clean old caches and take control immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -21,17 +12,48 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch — serve from cache when offline
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+// Fetch strategy:
+// - API calls: always network, never cache
+// - Navigation (HTML): network-first so app always gets fresh index.html
+// - Static assets: cache-first with network fallback
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  if (event.request.url.includes('/api/')) return; // never cache API calls
 
+  const url = new URL(event.request.url);
+
+  // Never cache API calls
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Navigation requests (page loads) — network first, fall back to cached index.html
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        caches.match('/index.html')
+      )
+    );
+    return;
+  }
+
+  // Static assets — cache first, then network
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request).then((response) => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      });
+    })
   );
 });
 
-// Push — show notification
+// Push — show OS notification
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 
@@ -52,7 +74,7 @@ self.addEventListener('push', (event) => {
     renotify: true,
     data: payload.data || {},
     actions: [
-      { action: 'view', title: 'View Map' },
+      { action: 'view', title: 'View' },
       { action: 'dismiss', title: 'Dismiss' },
     ],
   };
@@ -60,17 +82,15 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Notification click — open the app at the right page
+// Notification click — open app at correct page
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
   if (event.action === 'dismiss') return;
 
   const url = event.notification.data?.url || '/owner/map';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // If app is already open, focus it and navigate
       for (const client of clientList) {
         if ('focus' in client) {
           client.focus();
@@ -78,7 +98,6 @@ self.addEventListener('notificationclick', (event) => {
           return;
         }
       }
-      // Otherwise open a new window
       if (clients.openWindow) return clients.openWindow(url);
     })
   );

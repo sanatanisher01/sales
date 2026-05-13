@@ -17,10 +17,18 @@ function formatDate(ts) {
   return format(d, 'dd MMM yyyy, HH:mm');
 }
 
+function getQueueCount() {
+  try {
+    const r = localStorage.getItem('order_queue');
+    return r ? JSON.parse(r).length : 0;
+  } catch { return 0; }
+}
+
 export default function SalesmanOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [queuedCount, setQueuedCount] = useState(getQueueCount);
 
   useEffect(() => {
     api.get('/salesman/orders')
@@ -29,13 +37,16 @@ export default function SalesmanOrders() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Check for queued offline orders
-  const queuedCount = (() => {
-    try {
-      const raw = localStorage.getItem('order_queue');
-      return raw ? JSON.parse(raw).length : 0;
-    } catch { return 0; }
-  })();
+  // Refresh queued count when coming back online or tab regains focus
+  useEffect(() => {
+    const refresh = () => setQueuedCount(getQueueCount());
+    window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('online', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
 
   return (
     <div className="p-4 max-w-lg mx-auto">
@@ -81,7 +92,6 @@ export default function SalesmanOrders() {
         </div>
       )}
 
-      {/* Order detail modal */}
       {selected && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
           onClick={() => setSelected(null)}>
@@ -95,7 +105,6 @@ export default function SalesmanOrders() {
                   ✕
                 </button>
               </div>
-
               <div className="space-y-3 text-sm">
                 <Row label="Customer" value={selected.customerName} />
                 <Row label="Phone" value={selected.customerPhone} />
@@ -104,7 +113,6 @@ export default function SalesmanOrders() {
                   <span className={`badge ${statusBadge[selected.status] || 'badge-gray'}`}>{selected.status}</span>
                 </Row>
                 {selected.note && <Row label="Note" value={selected.note} />}
-
                 <div>
                   <span className="text-gray-500 font-medium">Items</span>
                   <div className="mt-2 border rounded-lg overflow-hidden">

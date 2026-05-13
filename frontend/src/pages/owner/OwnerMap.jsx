@@ -69,7 +69,6 @@ export default function OwnerMap() {
   const [firestoreError, setFirestoreError] = useState(false);
   const pollRef = useRef(null);
 
-  // Fallback: fetch via REST API (used when Firestore listener fails)
   const fetchViaApi = useCallback(async () => {
     try {
       const [locRes, stopRes] = await Promise.all([
@@ -92,35 +91,24 @@ export default function OwnerMap() {
     }
   }, []);
 
-  // Primary: Firestore real-time listener — waits for Firebase auth to be ready
-  // Uses single where('ownerId') then filters dutyStatus in memory — avoids composite index
+  // Primary: Firestore listener — waits for Firebase auth (critical on mobile)
   useEffect(() => {
     if (!user?.uid) return;
 
     let unsub = () => {};
-    let unsubPoll = null;
 
-    // Wait for Firebase Auth state before attaching listener (critical on mobile)
     const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (!firebaseUser) {
-        // Firebase not signed in yet — fall back to REST polling immediately
         setFirestoreError(true);
         setLoading(false);
         fetchViaApi();
-        if (!pollRef.current) {
-          pollRef.current = setInterval(fetchViaApi, 5000);
-        }
+        if (!pollRef.current) pollRef.current = setInterval(fetchViaApi, 5000);
         return;
       }
 
-      // Firebase auth ready — attach Firestore listener
-      if (unsubPoll) { clearInterval(unsubPoll); unsubPoll = null; }
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
-      const q = query(
-        collection(db, 'users'),
-        where('ownerId', '==', user.uid)
-      );
+      const q = query(collection(db, 'users'), where('ownerId', '==', user.uid));
 
       unsub = onSnapshot(q,
         (snap) => {
@@ -138,9 +126,7 @@ export default function OwnerMap() {
           setFirestoreError(true);
           setLoading(false);
           fetchViaApi();
-          if (!pollRef.current) {
-            pollRef.current = setInterval(fetchViaApi, 5000);
-          }
+          if (!pollRef.current) pollRef.current = setInterval(fetchViaApi, 5000);
         }
       );
     });
@@ -152,7 +138,7 @@ export default function OwnerMap() {
     };
   }, [user?.uid, fetchViaApi]);
 
-  // Stop events listener — waits for Firebase auth, single where, no composite index
+  // Stop events listener
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -161,17 +147,14 @@ export default function OwnerMap() {
     const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (!firebaseUser) return;
 
-      const q = query(
-        collection(db, 'stopEvents'),
-        where('ownerId', '==', user.uid)
-      );
+      const q = query(collection(db, 'stopEvents'), where('ownerId', '==', user.uid));
 
       unsub = onSnapshot(q, (snap) => {
         const events = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((e) => !e.resolved);
         setStopEvents(events);
-      }, () => { /* silent — stop events fetched in fetchViaApi fallback */ });
+      }, () => {});
     });
 
     return () => { unsubAuth(); unsub(); };
@@ -216,11 +199,9 @@ export default function OwnerMap() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-
             {activeLocations.length > 0 && (
               <FitBounds positions={activeLocations.map((s) => [s.liveLocation.lat, s.liveLocation.lng])} />
             )}
-
             {activeLocations.map((s, idx) => {
               const color = TRAIL_COLORS[idx % TRAIL_COLORS.length];
               const stale = isStale(s);
@@ -245,25 +226,25 @@ export default function OwnerMap() {
                 </Marker>
               );
             })}
+          </MapContainer>
 
-            {/* Show all on-duty salesmen in list even without GPS yet */}
-            {activeLocations.length === 0 && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1000]">
-                <div className="bg-white/90 rounded-xl px-6 py-4 shadow text-center">
-                  <div className="text-2xl mb-1">🗺️</div>
-                  <div className="text-gray-600 font-medium">
-                    {salesmen.length > 0
-                      ? `${salesmen.length} salesman on duty — waiting for GPS…`
-                      : 'No salesmen on duty'}
-                  </div>
+          {/* Overlay rendered OUTSIDE MapContainer to avoid invalid DOM nesting on mobile */}
+          {activeLocations.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1000]">
+              <div className="bg-white/90 rounded-xl px-6 py-4 shadow text-center">
+                <div className="text-2xl mb-1">🗺️</div>
+                <div className="text-gray-600 font-medium">
+                  {salesmen.length > 0
+                    ? `${salesmen.length} salesman on duty — waiting for GPS…`
+                    : 'No salesmen on duty'}
                 </div>
               </div>
-            )}
-          </MapContainer>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Salesman list — shows ALL on-duty, even without GPS */}
+      {/* Salesman list */}
       {salesmen.length > 0 && (
         <div className="bg-white border-t border-gray-200 flex-shrink-0 max-h-40 overflow-y-auto">
           {salesmen.map((s, idx) => {

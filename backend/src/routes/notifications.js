@@ -40,27 +40,20 @@ router.get('/', authenticate, async (req, res, next) => {
     const uid = req.user.uid;
     const role = req.user.role;
 
-    // Query by recipientId field (works for both roles, single where = no index needed)
-    const snapshot = await db.collection('notifications')
-      .where('recipientId', '==', uid)
-      .get();
+    // Query by recipientId (single where = no index needed)
+    const snap1 = await db.collection('notifications').where('recipientId', '==', uid).get();
 
-    // Fallback: also query by ownerId for legacy stop_event notifications
-    let extra = [];
+    // For owner: also fetch by ownerId to catch stop_event notifications
+    let allDocs = [...snap1.docs];
     if (role === 'owner') {
-      const legacySnap = await db.collection('notifications')
-        .where('ownerId', '==', uid)
-        .get();
-      const legacyIds = new Set(snapshot.docs.map((d) => d.id));
-      extra = legacySnap.docs
-        .filter((d) => !legacyIds.has(d.id))
-        .map((d) => ({ id: d.id, ...d.data() }));
+      const snap2 = await db.collection('notifications').where('ownerId', '==', uid).get();
+      const seen = new Set(snap1.docs.map((d) => d.id));
+      snap2.docs.forEach((d) => { if (!seen.has(d.id)) allDocs.push(d); });
     }
 
-    const notifications = [
-      ...snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-      ...extra,
-    ].sort((a, b) => (b.createdAt?._seconds ?? 0) - (a.createdAt?._seconds ?? 0))
+    const notifications = allDocs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => (b.createdAt?._seconds ?? 0) - (a.createdAt?._seconds ?? 0))
       .slice(0, 50);
 
     res.json({ notifications });
@@ -73,7 +66,6 @@ router.patch('/:id/read', authenticate, async (req, res, next) => {
     const db = getDb();
     const doc = await db.collection('notifications').doc(req.params.id).get();
     if (!doc.exists) return res.status(404).json({ error: 'Notification not found' });
-    // Only the recipient can mark it read
     const data = doc.data();
     if (data.recipientId !== req.user.uid && data.ownerId !== req.user.uid)
       return res.status(403).json({ error: 'Forbidden' });
@@ -83,21 +75,25 @@ router.patch('/:id/read', authenticate, async (req, res, next) => {
 });
 
 // POST /api/notifications/read-all
+// Uses single where per query + in-memory filter to avoid composite index requirement
 router.post('/read-all', authenticate, async (req, res, next) => {
   try {
     const db = getDb();
     const uid = req.user.uid;
 
-    const snap1 = await db.collection('notifications').where('recipientId', '==', uid).where('read', '==', false).get();
-    const snap2 = req.user.role === 'owner'
-      ? await db.collection('notifications').where('ownerId', '==', uid).where('read', '==', false).get()
-      : { docs: [] };
+    const snap1 = await db.collection('notifications').where('recipientId', '==', uid).get();
+    let allDocs = [...snap1.docs];
 
-    const seen = new Set();
+    if (req.user.role === 'owner') {
+      const snap2 = await db.collection('notifications').where('ownerId', '==', uid).get();
+      const seen = new Set(snap1.docs.map((d) => d.id));
+      snap2.docs.forEach((d) => { if (!seen.has(d.id)) allDocs.push(d); });
+    }
+
     const batch = db.batch();
-    [...snap1.docs, ...snap2.docs].forEach((doc) => {
-      if (!seen.has(doc.id)) { seen.add(doc.id); batch.update(doc.ref, { read: true }); }
-    });
+    allDocs
+      .filter((doc) => doc.data().read === false)
+      .forEach((doc) => batch.update(doc.ref, { read: true }));
     await batch.commit();
     res.json({ message: 'All notifications marked as read' });
   } catch (err) { next(err); }

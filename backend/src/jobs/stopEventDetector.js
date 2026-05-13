@@ -20,7 +20,6 @@ async function detectStopEvents() {
       const salesmanId = session.salesmanId;
       const ownerId = session.ownerId;
 
-      // Single where — sort in memory
       const cutoff = new Date(Date.now() - 10 * 60 * 1000);
       const pingsSnap = await db.collection('locationPings')
         .where('sessionId', '==', sessionId)
@@ -42,14 +41,14 @@ async function detectStopEvents() {
         haversineDistance(anchor.lat, anchor.lng, p.lat, p.lng) <= STOP_RADIUS_METRES
       );
 
-      const openStopSnap = await db.collection('stopEvents')
+      // Single where — avoids composite index; filter resolved in memory
+      const stopEventsSnap = await db.collection('stopEvents')
         .where('sessionId', '==', sessionId)
-        .where('resolved', '==', false)
-        .limit(1).get();
+        .get();
+      const openStops = stopEventsSnap.docs.filter((d) => d.data().resolved === false);
 
       if (allWithinRadius) {
-        if (openStopSnap.empty) {
-          // New stop event
+        if (openStops.length === 0) {
           const stopId = uuidv4();
           const stopLat = anchor.lat;
           const stopLng = anchor.lng;
@@ -59,19 +58,18 @@ async function detectStopEvents() {
           if (!address) address = `${stopLat.toFixed(6)}, ${stopLng.toFixed(6)}`;
 
           const now = new Date();
+          const title = `${session.salesmanName} stopped`;
+          const body = `Stopped at: ${address}`;
 
-          // Save stop event
           await db.collection('stopEvents').doc(stopId).set({
             sessionId, salesmanId, salesmanName: session.salesmanName,
             ownerId, lat: stopLat, lng: stopLng, address,
             startTime, endTime: null, resolved: false, createdAt: now,
           });
 
-          const title = `${session.salesmanName} stopped`;
-          const body = `Stopped at: ${address}`;
-
-          // Save in-app notification record
+          // recipientId required so Firestore listener (where recipientId==uid) finds it
           await db.collection('notifications').doc(uuidv4()).set({
+            recipientId: ownerId,
             ownerId,
             type: 'stop_event',
             title,
@@ -84,13 +82,10 @@ async function detectStopEvents() {
             createdAt: now,
           });
 
-          // Send Web Push to owner
           const subSnap = await db.collection('pushSubscriptions').doc(ownerId).get();
           if (subSnap.exists) {
-            const { subscription } = subSnap.data();
-            sendPushNotification(subscription, {
-              title,
-              body,
+            sendPushNotification(subSnap.data().subscription, {
+              title, body,
               icon: '/pwa-192x192.png',
               badge: '/pwa-192x192.png',
               data: { type: 'stop_event', stopId, salesmanId, sessionId, url: '/owner/map' },
@@ -98,19 +93,21 @@ async function detectStopEvents() {
           }
         }
       } else {
-        // Salesman moving — resolve open stop event
-        if (!openStopSnap.empty) {
-          const stopDoc = openStopSnap.docs[0];
+        if (openStops.length > 0) {
+          const stopDoc = openStops[0];
           const stopData = stopDoc.data();
           const endTime = new Date();
           await stopDoc.ref.update({ resolved: true, endTime });
 
-          // Save resolved notification
+          const title = `${session.salesmanName} is moving again`;
+          const body = `Resumed from: ${stopData.address || 'unknown location'}`;
+
           await db.collection('notifications').doc(uuidv4()).set({
+            recipientId: ownerId,
             ownerId,
             type: 'stop_resolved',
-            title: `${session.salesmanName} is moving again`,
-            body: `Resumed from: ${stopData.address || 'unknown location'}`,
+            title,
+            body,
             stopId: stopDoc.id,
             salesmanId,
             salesmanName: session.salesmanName,
@@ -119,13 +116,10 @@ async function detectStopEvents() {
             createdAt: endTime,
           });
 
-          // Send Web Push for resolution too
           const subSnap = await db.collection('pushSubscriptions').doc(ownerId).get();
           if (subSnap.exists) {
-            const { subscription } = subSnap.data();
-            sendPushNotification(subscription, {
-              title: `${session.salesmanName} is moving again`,
-              body: `Resumed from: ${stopData.address || 'unknown location'}`,
+            sendPushNotification(subSnap.data().subscription, {
+              title, body,
               icon: '/pwa-192x192.png',
               data: { type: 'stop_resolved', salesmanId, sessionId, url: '/owner/map' },
             });

@@ -56,19 +56,23 @@ router.post('/duty/stop', async (req, res, next) => {
     const sessionDoc = existing.docs[0];
     const now = new Date();
 
-    // Resolve open stop events — two where clauses, no orderBy
-    const openStopEvents = await db.collection('stopEvents')
+    // Single where — avoids composite index; filter resolved in memory
+    const stopEventsSnap = await db.collection('stopEvents')
       .where('sessionId', '==', sessionDoc.id)
-      .where('resolved', '==', false)
       .get();
 
     const batch = db.batch();
-    openStopEvents.docs.forEach((doc) => {
-      batch.update(doc.ref, { resolved: true, endTime: now });
-    });
+    stopEventsSnap.docs
+      .filter((doc) => doc.data().resolved === false)
+      .forEach((doc) => batch.update(doc.ref, { resolved: true, endTime: now }));
+
     batch.update(sessionDoc.ref, { status: 'ended', endedAt: now });
+
+    // Clear liveLocation so owner map removes marker immediately
     batch.update(db.collection('users').doc(salesmanId), {
-      dutyStatus: 'Off Duty', activeSessionId: null,
+      dutyStatus: 'Off Duty',
+      activeSessionId: null,
+      liveLocation: null,
     });
 
     await batch.commit();

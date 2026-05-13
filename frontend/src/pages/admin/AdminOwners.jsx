@@ -53,8 +53,7 @@ export default function AdminOwners() {
       setForm({ name: '', email: '', password: '' });
       fetchOwners(1);
     } catch (err) {
-      const msg = err.response?.data?.error || 'Failed to create owner';
-      toast.error(msg);
+      toast.error(err.response?.data?.error || 'Failed to create owner');
     } finally {
       setSubmitting(false);
     }
@@ -80,7 +79,6 @@ export default function AdminOwners() {
         </button>
       </div>
 
-      {/* Create form */}
       {showForm && (
         <div className="card mb-6">
           <h2 className="font-semibold text-gray-700 mb-4">Create Owner Account</h2>
@@ -110,7 +108,6 @@ export default function AdminOwners() {
         </div>
       )}
 
-      {/* Owners list */}
       {loading ? (
         <div className="text-center py-12 text-gray-400">Loading…</div>
       ) : owners.length === 0 ? (
@@ -124,17 +121,20 @@ export default function AdminOwners() {
                   <div className="font-medium text-gray-800 truncate">{owner.name}</div>
                   <div className="text-sm text-gray-500 truncate">{owner.email}</div>
                   <div className="text-xs text-gray-400 mt-0.5">
-                    Registered: {owner.createdAt ? format(new Date(owner.createdAt._seconds * 1000), 'dd MMM yyyy') : '—'}
+                    Registered: {owner.createdAt?._seconds
+                      ? format(new Date(owner.createdAt._seconds * 1000), 'dd MMM yyyy')
+                      : '—'}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={owner.isActive ? 'badge-green' : 'badge-red'}>
+                  {/* Fixed: added badge base class */}
+                  <span className={`badge ${owner.isActive ? 'badge-green' : 'badge-red'}`}>
                     {owner.isActive ? 'Active' : 'Inactive'}
                   </span>
-                  <button
-                    onClick={() => toggleActive(owner)}
-                    className={owner.isActive ? 'btn-danger text-xs px-3 py-1 min-h-[36px]' : 'btn-success text-xs px-3 py-1 min-h-[36px]'}
-                  >
+                  <button onClick={() => toggleActive(owner)}
+                    className={owner.isActive
+                      ? 'btn-danger text-xs px-3 py-1 min-h-[36px]'
+                      : 'btn-success text-xs px-3 py-1 min-h-[36px]'}>
                     {owner.isActive ? 'Deactivate' : 'Activate'}
                   </button>
                 </div>
@@ -142,7 +142,6 @@ export default function AdminOwners() {
             ))}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 mt-6">
               <button className="btn-secondary" disabled={page <= 1} onClick={() => fetchOwners(page - 1)}>← Prev</button>
